@@ -1,0 +1,21 @@
+# --- UE5 核心忽略项 ---
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Script/
+
+# --- IDE 生成文件 (Rider & VS) ---
+.idea/
+.vscode/
+.vs/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.opendb
+.vsconfig
+
+# --- 其它临时文件 ---
+*.log
