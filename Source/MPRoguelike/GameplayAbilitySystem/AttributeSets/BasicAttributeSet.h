@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "AbilitySystemComponent.h"
 #include "BasicAttributeSet.generated.h"
 
@@ -112,5 +114,13 @@ public:
 	void OnRep_MovementSpeed(const FGameplayAttributeData& OldValue) const
 	{
 		GAMEPLAYATTRIBUTE_REPNOTIFY(UBasicAttributeSet, MovementSpeed, OldValue);
+		
+		if (ACharacter* AvatarCharacter = Cast<ACharacter>(GetOwningActor()))
+		{
+			AvatarCharacter->GetCharacterMovement()->MaxWalkSpeed = MovementSpeed.GetCurrentValue();
+		}
 	}
+	
+	// 当任何属性被 GE 修改后，都会触发这个函数
+	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
 };

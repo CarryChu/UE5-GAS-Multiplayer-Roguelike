@@ -24,9 +24,9 @@ void AEnemyPoolManager::BeginPlay()
 			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
 			// 生成怪物（统一放在坐标 0,0,0 的地底或者虚空）
-
 			if (AEnemyBase* NewEnemy = GetWorld()->SpawnActor<AEnemyBase>(EnemyClassToSpawn, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
 			{
+				// 重要：在 BeginPlay 之前就设置为休眠，确保网络复制时是正确状态
 				NewEnemy->GoToSleep(); // 生成后立刻让它进入休眠状态
 				EnemyPool.Add(NewEnemy); // 塞进数组保管
 			}

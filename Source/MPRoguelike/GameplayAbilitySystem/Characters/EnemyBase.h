@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
+#include "GameplayTagContainer.h"
 #include "EnemyBase.generated.h"
 
 class UAbilitySystemComponent;
@@ -23,20 +24,28 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	
 	// 从对象池中唤醒（重生）
-	// BlueprintNativeEvent 允许你在 C++ 写逻辑，同时在蓝图里也能作为红节点触发
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Pool")
 	void WakeUp(FVector Location);
-
-	// C++ 层的实现必须加 _Implementation 后缀
 	virtual void WakeUp_Implementation(FVector Location);
     
-    // 死亡或回收时进入休眠
+	// 死亡或回收时进入休眠
     UFUNCTION(BlueprintCallable, Category = "Pool")
     virtual void GoToSleep();
+
+	// 在生成时调用，确保初始状态正确
+	virtual void PostInitializeComponents() override;
     
-    // 标记当前是否处于休眠状态
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pool")
-    bool bIsSleeping = false;
+	// 将状态变量改为 RepNotify
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_IsSleeping, Category = "Pool")
+	bool bIsSleeping = true; // 注意这里初始值改成 true
+
+	// 当 bIsSleeping 从服务器同步过来时，客户端会自动执行这个函数
+	UFUNCTION()
+	void OnRep_IsSleeping();
+
+	// 声明网络复制函数（必须有）
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -46,16 +55,11 @@ protected:
 
 	UPROPERTY(Transient)
 	UBasicAttributeSet* AttributeSet;
-	
-	// 让所有客户端一起隐身怪物
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_GoToSleep();
 
-	// 让所有客户端一起显示怪物并瞬间传送
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_WakeUp(FVector Location);
+	virtual void OnSlowTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	
 public:
+
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 

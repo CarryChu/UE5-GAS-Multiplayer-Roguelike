@@ -1,7 +1,10 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "BasicAttributeSet.h"
+#include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UBasicAttributeSet::UBasicAttributeSet()
 {
@@ -11,7 +14,7 @@ UBasicAttributeSet::UBasicAttributeSet()
 	InitArmor(0.f);
 	InitAttackRange(1500.f);
 	InitAttackPower(10.f);
-	InitAttackSpeed(3.0f);
+	InitAttackSpeed(1.0f);
 	InitMovementSpeed(500.f);
 }
 
@@ -28,4 +31,20 @@ void UBasicAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UBasicAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBasicAttributeSet, AttackSpeed, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBasicAttributeSet, MovementSpeed, COND_None, REPNOTIFY_Always);
+}
+
+void UBasicAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	// 如果被改变的属性是 "移动速度" (注意：这里替换成你实际定义的移动速度变量名)
+	if (Data.EvaluatedData.Attribute == GetMovementSpeedAttribute())
+	{
+		// 拿到拥有这个属性的角色
+		if (ACharacter* AvatarCharacter = Cast<ACharacter>(GetOwningActor()))
+		{
+			// 把 GAS 里的数字，强行赋值给角色的双腿（移动组件）！
+			AvatarCharacter->GetCharacterMovement()->MaxWalkSpeed = GetMovementSpeed();
+		}
+	}
 }
