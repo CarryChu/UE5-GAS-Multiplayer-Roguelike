@@ -1,12 +1,14 @@
 // 在项目设置的描述页面中填写您的版权声明。
 
 #include "CharacterBase.h"
-
+#include "GameplayTagContainer.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "MPRoguelike/GameplayAbilitySystem/AttributeSets/BasicAttributeSet.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "Kismet/GameplayStatics.h"
+
 
 // 设置默认值
 ACharacterBase::ACharacterBase()
@@ -103,6 +105,30 @@ UAbilitySystemComponent* ACharacterBase::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+bool ACharacterBase::GetIsDowned() const
+{
+	if (AbilitySystemComponent)
+	{
+		// 核心：不再读布尔值，而是向 GAS 询问“有没有 State.Downed 这个标签”
+		FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("State.Downed"));
+		return AbilitySystemComponent->HasMatchingGameplayTag(DownedTag);
+	}
+	return false;
+}
+
+void ACharacterBase::ServerRevivePlayer()
+{
+	if (AbilitySystemComponent)
+	{
+		FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("State.Downed"));
+
+		// 1. 在服务器本地强行摘除游离标签
+		AbilitySystemComponent->RemoveLooseGameplayTag(DownedTag);
+
+		// 2. 强制把这个标签的网络同步数量设为 0！这会瞬间通知所有客机
+		AbilitySystemComponent->SetLooseGameplayTagCount(DownedTag, 0);
+	}
+}
 
 // 开始自动攻击循环
 void ACharacterBase::StartAutoAttack()
@@ -152,5 +178,54 @@ void ACharacterBase::GiveDefaultAbilities()
 			// 将技能装载进角色的 GAS 系统中
 			AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(StartupAbility, 1, INDEX_NONE, this));
 		}
+	}
+}
+
+
+void ACharacterBase::SwitchSpectateTarget(int32 Direction)
+{
+	// 1. 安全校验：确保当前世界存在
+	if (!GetWorld()) return;
+
+	// 2. 获取全场所有的玩家角色
+	TArray<AActor*> AllCharacters;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACharacterBase::StaticClass(), AllCharacters);
+
+	// 3. 筛选出“活着”且“不是自己”的队友
+	TArray<ACharacterBase*> AliveTeammates;
+	for (AActor* Actor : AllCharacters)
+	{
+		// 安全的向下转型
+		ACharacterBase* Character = Cast<ACharacterBase>(Actor);
+		
+		// 核心判断：指针有效 + 不是自己 + 没有倒地
+		if (Character && Character != this && !Character->GetIsDowned())
+		{
+			AliveTeammates.Add(Character);
+		}
+	}
+
+	// 4. 如果场上没有活着的队友了，直接返回，不切换
+	if (AliveTeammates.Num() == 0) return;
+
+	// 5. 算法核心：计算下一个观战目标的索引 (带防越界处理)
+	SpectateIndex += Direction;
+	
+	// 处理往回切 (PgUp) 时的负数越界
+	if (SpectateIndex < 0)
+	{
+		SpectateIndex = AliveTeammates.Num() - 1;
+	}
+	// 处理往前切 (PgDn) 时的正数越界 (使用取模运算符)
+	else
+	{
+		SpectateIndex = SpectateIndex % AliveTeammates.Num();
+	}
+
+	// 6. 夺取控制权并切换摄像机
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		// 0.2f 代表切换镜头时的平滑过渡时间
+		PC->SetViewTargetWithBlend(AliveTeammates[SpectateIndex], 0.2f);
 	}
 }

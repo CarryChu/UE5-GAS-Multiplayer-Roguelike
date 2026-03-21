@@ -5,6 +5,7 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "MPRoguelike/GameplayAbilitySystem/Characters/CharacterBase.h"
 
 UBasicAttributeSet::UBasicAttributeSet()
 {
@@ -36,15 +37,42 @@ void UBasicAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 void UBasicAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
-
-	// 如果被改变的属性是 "移动速度" (注意：这里替换成你实际定义的移动速度变量名)
+	// 如果被改变的属性是 "移动速度" 
 	if (Data.EvaluatedData.Attribute == GetMovementSpeedAttribute())
 	{
 		// 拿到拥有这个属性的角色
 		if (ACharacter* AvatarCharacter = Cast<ACharacter>(GetOwningActor()))
 		{
-			// 把 GAS 里的数字，强行赋值给角色的双腿（移动组件）！
+			// 把 GAS 里的数字，强行赋值给角色的移动组件！
 			AvatarCharacter->GetCharacterMovement()->MaxWalkSpeed = GetMovementSpeed();
+		}
+	}
+	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
+	{
+		// 严谨起见，把血量锁死在 0 和 MaxHealth 之间
+		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
+		// 一旦血量归零！
+		if (GetHealth() <= 0.0f)
+		{
+			// 获取到这具身体
+			if (ACharacterBase* AvatarCharacter = Cast<ACharacterBase>(GetOwningActor()))
+			{
+				// 只有服务器法官才有资格宣判死亡！
+				if (AvatarCharacter->HasAuthority() && !AvatarCharacter->GetIsDowned())
+				{
+					// 获取倒地标签
+					FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("State.Downed"));
+    
+					// 1. 先在本地强行加上游离标签
+					AvatarCharacter->GetAbilitySystemComponent()->AddLooseGameplayTag(DownedTag);
+
+					// 2. 然后手动把这个标签的数量设为 1，并强制同步给所有客户端
+					AvatarCharacter->GetAbilitySystemComponent()->SetLooseGameplayTagCount(DownedTag, 1);
+					
+					// 呼叫蓝图里的死亡事件
+					AvatarCharacter->OnServerHealthZero();
+				}
+			}
 		}
 	}
 }

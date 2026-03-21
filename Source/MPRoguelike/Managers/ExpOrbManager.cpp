@@ -7,14 +7,13 @@
 AExpOrbManager::AExpOrbManager()
 {
 	PrimaryActorTick.bCanEverTick = true;  
-	
-	// ★ 必须加上这两行！
+    
+	// ★ 必须加上这两行！保证管理器在网络中存在
 	bReplicates = true;
 	bAlwaysRelevant = true;
 
-	HISMComponent = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("HISMComponent"));
-	RootComponent = HISMComponent;
-	HISMComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	RootComponent = SceneRoot;
 }
 
 void AExpOrbManager::BeginPlay()
@@ -32,76 +31,75 @@ void AExpOrbManager::AddExpOrb(FVector SpawnLocation, float ExpAmount)
 
 void AExpOrbManager::Multicast_AddExpOrb_Implementation(FVector SpawnLocation, float ExpAmount)
 {
-	// ★ 抬高 40 厘米，防止卡在地底看不见！
-	SpawnLocation.Z += 40.0f; 
 
+	SpawnLocation.Z -= 40.0f; 
+
+	// 只保留最核心的数据层操作
 	OrbList.Add(FExpOrbData(SpawnLocation, ExpAmount));
-
-	FVector OrbScale = FVector(0.5f, 0.5f, 0.5f); 
-	FTransform InstanceTransform(FRotator::ZeroRotator, SpawnLocation, OrbScale);
-	
-	HISMComponent->AddInstance(InstanceTransform);
 }
 
 void AExpOrbManager::Tick(float DeltaTime)
 {
-	Super::Tick(DeltaTime);
+    Super::Tick(DeltaTime);
 
-	TArray<AActor*> Players;
-	UGameplayStatics::GetAllActorsOfClass(this, ACharacter::StaticClass(), Players);
-	if (Players.Num() == 0) return;
+    TArray<AActor*> Players;
+    UGameplayStatics::GetAllActorsOfClass(this, ACharacter::StaticClass(), Players);
+    if (Players.Num() == 0) return;
 
-	for (int32 i = OrbList.Num() - 1; i >= 0; i--)
-	{
-		FExpOrbData& Orb = OrbList[i];
-		bool bIsPickedUp = false;
+    for (int32 i = OrbList.Num() - 1; i >= 0; i--)
+    {
+       FExpOrbData& Orb = OrbList[i];
+       bool bIsPickedUp = false;
 
-		// 1. 如果已经认主，死死追着那个玩家
-		if (Orb.TargetPlayer.IsValid())
-		{
-			AActor* Player = Orb.TargetPlayer.Get();
-			FVector PlayerLoc = Player->GetActorLocation();
-			float DistSquared = FVector::DistSquared(Orb.Location, PlayerLoc);
+       // 如果检测到玩家则锁定目标，开始追踪（进入 Tracking 态）
+       // 如果已经锁定目标了，就继续追踪直到被拾取
+       if (Orb.TargetPlayer.IsValid())
+       {
+          AActor* Player = Orb.TargetPlayer.Get();
+          FVector PlayerLoc = Player->GetActorLocation();
+          float DistSquared = FVector::DistSquared(Orb.Location, PlayerLoc);
 
-			if (DistSquared <= (PickupRadius * PickupRadius))
-			{
-				bIsPickedUp = true;
-				if (HasAuthority())
-				{
-					// TODO: GameState AddSharedExp
-				}
-			}
-			else
-			{
-				FVector Direction = (PlayerLoc - Orb.Location).GetSafeNormal();
-				Orb.Location += Direction * MagnetSpeed * DeltaTime;
+          // 判定是否达到拾取半径
+          if (DistSquared <= (PickupRadius * PickupRadius))
+          {
+             bIsPickedUp = true;
+             if (HasAuthority())
+             {
+                // 触发加经验逻辑
+                // TODO: GameState AddSharedExp
+             }
+          }
+          else
+          {
+             // 尚未拾取，计算插值与方向，向玩家飞行
+             FVector Direction = (PlayerLoc - Orb.Location).GetSafeNormal();
+             Orb.Location += Direction * MagnetSpeed * DeltaTime;
+             
+          }
+       }
+       else
+       {
+          // 如果处于游离状态（Idle 态），寻找最近的玩家
+          for (AActor* Player : Players)
+          {
+             FVector PlayerLoc = Player->GetActorLocation();
+             // 忽略高度差，纯测算平面距离
+             float DistSquared = FVector::DistSquared(FVector(Orb.Location.X, Orb.Location.Y, 0), FVector(PlayerLoc.X, PlayerLoc.Y, 0));
 
-				FVector OrbScale = FVector(0.5f, 0.5f, 0.5f); 
-				FTransform NewTransform(FRotator::ZeroRotator, Orb.Location, OrbScale);
-				HISMComponent->UpdateInstanceTransform(i, NewTransform, true, true, true);
-			}
-		}
-		else
-		{
-			// 2. 如果没认主（静止在地上），看看谁靠近了
-			for (AActor* Player : Players)
-			{
-				FVector PlayerLoc = Player->GetActorLocation();
-				// 忽略高度差，纯测算平面距离
-				float DistSquared = FVector::DistSquared(FVector(Orb.Location.X, Orb.Location.Y, 0), FVector(PlayerLoc.X, PlayerLoc.Y, 0));
+             // 判定是否进入磁吸感应半径
+             if (DistSquared <= (MagnetRadius * MagnetRadius))
+             {
+                Orb.TargetPlayer = Player; // ★ 核心：认主！状态切换至 Tracking
+                break; 
+             }
+          }
+       }
 
-				if (DistSquared <= (MagnetRadius * MagnetRadius))
-				{
-					Orb.TargetPlayer = Player; // ★ 核心：认主！
-					break; 
-				}
-			}
-		}
-
-		if (bIsPickedUp)
-		{
-			HISMComponent->RemoveInstance(i);
-			OrbList.RemoveAtSwap(i); 
-		}
-	}
+       // 如果已经被拾取，执行回收机制
+       if (bIsPickedUp)
+       {
+          // （注：如果是独立Actor，这里通常会调用 OrbActor->Destroy()）
+          OrbList.RemoveAtSwap(i); 
+       }
+    }
 }

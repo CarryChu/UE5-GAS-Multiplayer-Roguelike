@@ -4,6 +4,10 @@ DerivedDataCache/
 Intermediate/
 Saved/
 Script/
+Content/ParagonGideon/
+Content/ParagonMinions/
+Content/ParagonPhase/
+Content/Assets/Characters/
 
 # --- IDE 生成文件 (Rider & VS) ---
 .idea/

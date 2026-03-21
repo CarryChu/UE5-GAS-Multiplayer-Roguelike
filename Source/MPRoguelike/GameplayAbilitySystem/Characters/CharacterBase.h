@@ -55,7 +55,7 @@ protected:
 	UFUNCTION()
 	void TriggerAutoAttack();
 	
-	// ★ 核心魔法：这是一个交由子类（蓝图）去实现的函数 ★
+	
 	// C++只负责按时喊口号，具体的“发射火球”还是“挥剑”，在法师/战士蓝图里连节点！
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Combat")
 	void PerformAttack();
@@ -69,4 +69,24 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	
+	// 供 C++ 和蓝图调用的接口：通过 GAS 标签获取是否处于 Downed 状态
+	UFUNCTION(BlueprintPure, Category = "State")
+	bool GetIsDowned() const;
+	
+	// 供服务端调用的接口：复活玩家（移除倒地标签）
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "State")
+	void ServerRevivePlayer();
+	
+	// 当服务器端的 GAS 系统确认玩家血量归零时，触发这个事件
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat")
+	void OnServerHealthZero();
+	
+	// 记录当前正在观战的队友索引
+	UPROPERTY(BlueprintReadWrite, Category = "Spectate")
+	int32 SpectateIndex = 0;
+
+	// 核心观战切换函数 (暴露给蓝图的 PgUp / PgDn 调用)
+	UFUNCTION(BlueprintCallable, Category = "Spectate")
+	void SwitchSpectateTarget(int32 Direction);
 };
