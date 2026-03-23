@@ -4,6 +4,9 @@
 #include "EnemyBase.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystemComponent.h"
+#include "CharacterBase.h"
+#include "GameplayEffectTypes.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "MPRoguelike/GameplayAbilitySystem/AttributeSets/BasicAttributeSet.h"
 
@@ -69,13 +72,85 @@ void AEnemyBase::BeginPlay()
 		FGameplayTag SlowTag = FGameplayTag::RequestGameplayTag(TEXT("Debuff.Slow"));
 		AbilitySystemComponent->RegisterGameplayTagEvent(SlowTag, EGameplayTagEventType::NewOrRemoved).AddUObject(this, &AEnemyBase::OnSlowTagChanged);
 		
+		// 监听血量变化
+		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UBasicAttributeSet::GetHealthAttribute()).AddUObject(this, &AEnemyBase::HealthChangedCallback);
+		
+	}
+	
+	// 只有服务器需要找玩家并驱动AI
+	if (HasAuthority())
+	{
+		// 每 0.5 秒执行一次 FindClosestPlayer 函数，且循环执行
+		GetWorld()->GetTimerManager().SetTimer(TimerHandle_FindPlayer, this, &AEnemyBase::FindClosestPlayer, 0.5f, true);
 	}
 }
 
-// Called every frame
+void AEnemyBase::FindClosestPlayer()
+{
+	// 只有服务器才需要找目标
+	if (!HasAuthority() || bIsSleeping) return;
+
+	AActor* ClosestPlayer = nullptr;
+	// 设置一个初始的最大距离（等同于你蓝图里的 9999999.0）
+	float MinDistanceSq = MAX_FLT; 
+
+	// 高性能写法：遍历当前世界上的所有玩家（最多就4个，极速！）
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PC = Iterator->Get();
+		if (PC && PC->GetPawn())
+		{
+			APawn* PlayerPawn = PC->GetPawn();
+
+			// 【可选】：如果你有自己的玩家基类（比如 ACharacterBase），
+			// 你可以在这里 Cast 一下，判断玩家是不是处于倒地/死亡状态 (GetIsDowned)
+			 if (ACharacterBase* MyPlayer = Cast<ACharacterBase>(PlayerPawn))
+			 {
+			     if (MyPlayer->GetIsDowned()) continue; // 如果死了，就跳过不追他
+			 }
+
+			// 计算距离的平方（等同于蓝图的 Get Squared Distance To）
+			float DistSq = FVector::DistSquared(GetActorLocation(), PlayerPawn->GetActorLocation());
+			
+			// 如果距离比当前记录的最小距离还要小，就更新它
+			if (DistSq < MinDistanceSq)
+			{
+				MinDistanceSq = DistSq;
+				ClosestPlayer = PlayerPawn;
+			}
+		}
+	}
+
+	// 循环结束后，把找到的最近玩家存入大脑！
+	TargetPlayer = ClosestPlayer;
+}
+
+// 执行每帧逻辑
 void AEnemyBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bIsSleeping || !HasAuthority()) return;
+
+	// 拦截逻辑：是否正在攻击？
+	if (AbilitySystemComponent)
+	{
+		FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"));
+		if (AbilitySystemComponent->HasMatchingGameplayTag(AttackTag))
+		{
+			return; // 攻击时站定不动
+		}
+	}
+
+	// 如果有目标，直接朝着他走！
+	if (TargetPlayer)
+	{
+		// 计算方向并消除 Z 轴
+		FVector Direction = (TargetPlayer->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+		Direction.Z = 0.f; 
+		
+		AddMovementInput(Direction, 1.0f);
+	}
 }
 
 // Called to bind functionality to input
@@ -122,6 +197,8 @@ void AEnemyBase::OnRep_IsSleeping()
 			MoveComp->SetMovementMode(MOVE_Walking); // 恢复为寻路/行走模式
 			MoveComp->SetComponentTickEnabled(true);
 		}
+		
+		OnClientWakeUpUI();
 	}
 }
 
@@ -177,7 +254,7 @@ void AEnemyBase::OnSlowTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 		{
 			// 被打中了，减速到 70%！
 			GetCharacterMovement()->MaxWalkSpeed = BaseSpeed * 0.7f;
-			UE_LOG(LogTemp, Warning, TEXT("【大仇得报】怪物真的被减速了！当前速度: %f"), GetCharacterMovement()->MaxWalkSpeed);
+
 		}
 		else
 		{
@@ -185,4 +262,11 @@ void AEnemyBase::OnSlowTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 			GetCharacterMovement()->MaxWalkSpeed = BaseSpeed;
 		}
 	}
+}
+
+// 实现回调逻辑
+void AEnemyBase::HealthChangedCallback(const FOnAttributeChangeData& Data)
+{
+	// 当血量发生变化时，C++ 会立刻呼叫蓝图里的事件，并把新旧血量传过去！
+	OnHealthChanged(Data.OldValue, Data.NewValue);
 }

@@ -7,6 +7,15 @@
 #include "MPRoguelike/GameplayAbilitySystem/Characters/EnemyBase.h"
 #include "EnemyPoolManager.generated.h"
 
+USTRUCT()
+struct FEnemyArray
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<AEnemyBase*> Enemies;
+};
+
 UCLASS()
 class MPROGUELIKE_API AEnemyPoolManager : public AActor
 {
@@ -23,20 +32,20 @@ protected:
 
 public:
 	
-	// 在蓝图里指定的怪物类型
+	// 【核心升级1】字典配置表：让你能在蓝图面板里自由添加：[近战怪:100只], [远程怪:50只]...
 	UPROPERTY(EditAnywhere, Category = "Pool Settings")
-	TSubclassOf<AEnemyBase> EnemyClassToSpawn;
-
-	// 池子的容量（一次性生成多少只）
+	TMap<TSubclassOf<AEnemyBase>, int32> PoolConfig;
+	
+	// 同屏单兵种的最大硬上限（防内存爆炸机制）
 	UPROPERTY(EditAnywhere, Category = "Pool Settings")
-	int32 PoolSize = 100;
+	int32 MaxPoolSizePerClass = 300;
 
-	// 蓝图调用：从池子里获取一只可用的怪物
+	// 【核心升级2】取怪时，必须告诉对象池：你需要哪种怪！
 	UFUNCTION(BlueprintCallable, Category = "Pool")
-	AEnemyBase* GetEnemyFromPool(FVector SpawnLocation);
+	AEnemyBase* GetEnemyFromPool(TSubclassOf<AEnemyBase> EnemyClass, FVector SpawnLocation);
 	
 private:
-	// 这就是我们用来装怪物的“柜子”
+	// 核心数据结构：每种怪对应一个敌人数组
 	UPROPERTY()
-	TArray<AEnemyBase*> EnemyPool;
+	TMap<TSubclassOf<AEnemyBase>, FEnemyArray> EnemyPoolMap;
 };

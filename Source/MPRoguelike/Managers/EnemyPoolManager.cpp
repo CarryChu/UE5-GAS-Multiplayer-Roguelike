@@ -1,12 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "EnemyPoolManager.h"
-
 
 AEnemyPoolManager::AEnemyPoolManager()
 {
-	// 管理器本身不需要每帧运行
 	PrimaryActorTick.bCanEverTick = false; 
 }
 
@@ -14,54 +11,77 @@ void AEnemyPoolManager::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 铁律：只有服务器才有资格创建怪物池！
-	if (HasAuthority() && EnemyClassToSpawn)
+	// 只有服务器才有资格创建怪物池！
+	if (HasAuthority())
 	{
-		for (int32 i = 0; i < PoolSize; i++)
+		// 遍历蓝图里配置的所有怪物类型和数量
+		for (const auto& Pair : PoolConfig)
 		{
-			// 设置生成参数：即使重叠也强制生成
-			FActorSpawnParameters SpawnParams;
-			SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			TSubclassOf<AEnemyBase> EnemyClass = Pair.Key;
+			int32 Amount = Pair.Value;
 
-			// 生成怪物（统一放在坐标 0,0,0 的地底或者虚空）
-			if (AEnemyBase* NewEnemy = GetWorld()->SpawnActor<AEnemyBase>(EnemyClassToSpawn, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+			// 防呆设计：如果没有选类型，就跳过
+			if (!EnemyClass) continue;
+
+			// 为这个兵种新建一个专属的数组，并把它放进字典里
+			FEnemyArray& NewPoolArray = EnemyPoolMap.Add(EnemyClass);
+
+			// 根据配置的数量，生成对应数量的怪物，并放进这个数组里
+			for (int32 i = 0; i < Amount; i++)
 			{
-				// 重要：在 BeginPlay 之前就设置为休眠，确保网络复制时是正确状态
-				NewEnemy->GoToSleep(); // 生成后立刻让它进入休眠状态
-				EnemyPool.Add(NewEnemy); // 塞进数组保管
+				FActorSpawnParameters SpawnParams;
+				SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+				// 生成Enemy
+				if (AEnemyBase* NewEnemy = GetWorld()->SpawnActor<AEnemyBase>(EnemyClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams))
+				{
+					NewEnemy->GoToSleep(); 
+					NewPoolArray.Enemies.Add(NewEnemy); // 装进对应的数组里
+				}
 			}
 		}
 	}
 }
 
-AEnemyBase* AEnemyPoolManager::GetEnemyFromPool(FVector SpawnLocation)
+AEnemyBase* AEnemyPoolManager::GetEnemyFromPool(TSubclassOf<AEnemyBase> EnemyClass, FVector SpawnLocation)
 {
-	// 只有服务器能分配怪物
-	if (!HasAuthority()) return nullptr;
+	// 只有服务器能分配怪物，而且必须传入有效的Enemy类型
+	if (!HasAuthority() || !EnemyClass) return nullptr;
 
-	// 遍历柜子，找一个正在休眠的盘子
-	for (AEnemyBase* Enemy : EnemyPool)
+	// 1. 查字典，找到这个怪对应的数组
+	if (FEnemyArray* FoundPool = EnemyPoolMap.Find(EnemyClass))
 	{
-		if (Enemy && Enemy->bIsSleeping)
+		// 2. 在专属数组里，找一个正在休眠的怪
+		for (AEnemyBase* Enemy : FoundPool->Enemies)
 		{
-			// 找到了！把它唤醒并传送到指定位置
-			Enemy->WakeUp(SpawnLocation);
-			return Enemy;
+			if (Enemy && Enemy->bIsSleeping)
+			{
+				Enemy->WakeUp(SpawnLocation);
+				return Enemy;
+			}
+		}
+		
+		// 如果循环结束还没 return，说明没有怪了！
+		// 在强行生成新怪扩充池子之前，先检查一下池子是不是已经满了？
+		if (FoundPool->Enemies.Num() >= MaxPoolSizePerClass)
+		{
+			// 触发保护机制：场上这种怪已经达到 300 只了，全都在活跃，拒绝生成新怪！
+			// GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, TEXT("警告：触发同屏数量上限，停止刷怪！"));
+			return nullptr; 
+		}
+		
+		// 3. 危险保底：这个兵种的池子空了！（要么是配置的数量太少，要么是玩家杀得太快了！）则生成一个新怪，加入池子，并返回它
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		
+		if (AEnemyBase* NewEnemy = GetWorld()->SpawnActor<AEnemyBase>(EnemyClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams))
+		{
+			FoundPool->Enemies.Add(NewEnemy); // 加入对应的数组
+			NewEnemy->WakeUp(SpawnLocation); 
+			return NewEnemy;
 		}
 	}
-	
-	// 2. 危险情况保底：如果 100 只怪全都在场上活着（或者被错误地 Destroy 掉了）
-	// 系统为了不让游戏崩溃，只能临时生成新的怪来扩充池子
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	
-	if (AEnemyBase* NewEnemy = GetWorld()->SpawnActor<AEnemyBase>(EnemyClassToSpawn, SpawnLocation, FRotator::ZeroRotator, SpawnParams))
-	{
-		EnemyPool.Add(NewEnemy);
-		NewEnemy->WakeUp(SpawnLocation); // 生成后直接唤醒投入战斗
-		return NewEnemy;
-	}
 
-	// 如果100只怪全都在场上（池子空了），返回空指针，这秒钟就不刷怪了
+	// 如果连数组都没建（你没在 Config 里配这个怪），直接返回空
 	return nullptr; 
 }

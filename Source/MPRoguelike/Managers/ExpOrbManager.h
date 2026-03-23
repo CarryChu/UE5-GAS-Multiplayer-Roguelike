@@ -1,60 +1,55 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "ExpOrbManager.generated.h"
 
-// 定义一个结构体，用来在内存里记录每个球的数据
-USTRUCT()
+USTRUCT(BlueprintType)
 struct FExpOrbData
 {
 	GENERATED_BODY()
 
-	FVector Location;      // 当前位置
-	float ExpValue;        // 经验值大小
-	
-	// ★ 核心修改：记录这颗球被哪个玩家吸走了（认主锁定！）
-	TWeakObjectPtr<AActor> TargetPlayer; 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector Location;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) float ExpAmount;
+	TWeakObjectPtr<AActor> TargetPlayer;
 
-	FExpOrbData() : Location(FVector::ZeroVector), ExpValue(0.f), TargetPlayer(nullptr) {}
-	FExpOrbData(FVector InLoc, float InVal) : Location(InLoc), ExpValue(InVal), TargetPlayer(nullptr) {}
+	FExpOrbData() : Location(FVector::ZeroVector), ExpAmount(0.0f) {}
+	FExpOrbData(FVector Loc, float Exp) : Location(Loc), ExpAmount(Exp) {}
 };
 
 UCLASS()
 class MPROGUELIKE_API AExpOrbManager : public AActor
 {
 	GENERATED_BODY()
-
-public:
+	
+public:	
 	AExpOrbManager();
 
 protected:
 	virtual void BeginPlay() override;
 
-public:
+public:	
 	virtual void Tick(float DeltaTime) override;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	UHierarchicalInstancedStaticMeshComponent* HISMComponent;
 
-	UFUNCTION(BlueprintCallable, Category = "ExpSystem")
+	UFUNCTION(BlueprintCallable, Category = "ExpOrb System")
 	void AddExpOrb(FVector SpawnLocation, float ExpAmount);
-	
+
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_AddExpOrb(FVector SpawnLocation, float ExpAmount);
 
-	UPROPERTY(EditAnywhere, Category = "ExpSystem")
-	float MagnetRadius = 300.f;
-	
-	UPROPERTY(EditAnywhere, Category = "ExpSystem")
-	float PickupRadius = 50.f;
+	UFUNCTION(BlueprintImplementableEvent, Category = "ExpOrb System")
+	void OnOrbPickedUp(float ExpAmount, AActor* Picker);
 
-	UPROPERTY(EditAnywhere, Category = "ExpSystem")
-	float MagnetSpeed = 1500.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExpOrb Settings")
+	float PickupRadius = 80.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExpOrb Settings")
+	float MagnetRadius = 300.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ExpOrb Settings")
+	float MagnetSpeed = 1000.0f;
 	
-private:
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "ExpOrb System")
 	TArray<FExpOrbData> OrbList;
+	
 };

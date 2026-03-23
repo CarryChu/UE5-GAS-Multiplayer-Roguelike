@@ -58,6 +58,19 @@ protected:
 
 	virtual void OnSlowTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	
+	// 存储小怪当前锁定的目标玩家
+	UPROPERTY(BlueprintReadOnly, Category = "AI")
+	AActor* TargetPlayer;
+
+	// 搜寻玩家的定时器句柄
+	FTimerHandle TimerHandle_FindPlayer;
+
+	// 搜寻最近玩家的函数 (对应你蓝图里的 FindClosestPlayer)
+	void FindClosestPlayer();
+	
+	// C++ 接收 GAS 属性变化的底层回调
+	virtual void HealthChangedCallback(const struct FOnAttributeChangeData& Data);
+	
 public:
 
 	// Called every frame
@@ -65,4 +78,12 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	
+	// 这会在蓝图里自动生成一个叫 "Event On Health Changed" 的红头事件节点！
+	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
+	void OnHealthChanged(float OldValue, float NewValue);
+	
+	// 专门让客户端在醒来时刷新 UI 的事件！
+	UFUNCTION(BlueprintImplementableEvent, Category = "Pool|UI")
+	void OnClientWakeUpUI();
 };
