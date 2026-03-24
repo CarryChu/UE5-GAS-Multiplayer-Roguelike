@@ -171,12 +171,11 @@ void AEnemyBase::OnRep_IsSleeping()
 {
 	if (bIsSleeping)
 	{
-		// 睡觉：隐藏、关碰撞、关Tick
+		// Sleep：隐藏、关碰撞、关Tick
 		SetActorHiddenInGame(true);
 		SetActorEnableCollision(false);
 		SetActorTickEnabled(false);
-		
-		// 【新增】彻底封杀移动组件，断绝一切网络平滑和本地预测！
+		// 彻底封杀移动组件，断绝一切网络平滑和本地预测！
 		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 		{
 			MoveComp->StopMovementImmediately();
@@ -186,34 +185,29 @@ void AEnemyBase::OnRep_IsSleeping()
 	}
 	else
 	{
-		// 醒来：显示、开碰撞、开Tick
+		// WakeUp：显示、开碰撞、开Tick
 		SetActorHiddenInGame(false);
 		SetActorEnableCollision(true);
 		SetActorTickEnabled(true);
-
-		// 【新增】重启移动组件，让怪物活过来！
+		// 重启移动组件，让怪物能够正常寻路
 		if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
 		{
 			MoveComp->SetMovementMode(MOVE_Walking); // 恢复为寻路/行走模式
 			MoveComp->SetComponentTickEnabled(true);
 		}
-		
 		OnClientWakeUpUI();
 	}
 }
 
-// 3. 修改 GoToSleep
+// GoToSleep
 void AEnemyBase::GoToSleep()
 {
 	if (HasAuthority())
 	{
 		bIsSleeping = true;
-		
-		// 【终极绝杀：墓地机制】
 		// 怪物一旦死亡，立刻把它传送到地下 10000 米深处！
 		// 这样即使客户端在进行网络平滑插值，也绝对不会在玩家的屏幕上留下任何残影！
 		SetActorLocation(FVector(0.f, 0.f, -10000.f), false, nullptr, ETeleportType::TeleportPhysics);
-		
 		OnRep_IsSleeping(); // 服务器本地手动调用一次
 	}
 }
@@ -242,7 +236,7 @@ void AEnemyBase::WakeUp_Implementation(FVector Location)
 	}
 }
 
-// 怪物被挂上标签后，腿被打断的逻辑
+// 怪物被挂上标签后，根据标签改变移动速度
 void AEnemyBase::OnSlowTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	// 确保移动组件和属性集都存在
@@ -269,4 +263,11 @@ void AEnemyBase::HealthChangedCallback(const FOnAttributeChangeData& Data)
 {
 	// 当血量发生变化时，C++ 会立刻呼叫蓝图里的事件，并把新旧血量传过去！
 	OnHealthChanged(Data.OldValue, Data.NewValue);
+}
+
+// 当这只怪收到全服广播时，执行这个逻辑
+void AEnemyBase::Multicast_PlayHitReact_Implementation(AActor* DamageCauser)
+{
+	// 呼叫蓝图，所有的客户端（包括服务器本身）都会运行这里的蓝图节点！
+	OnTakeHitReact(DamageCauser);
 }

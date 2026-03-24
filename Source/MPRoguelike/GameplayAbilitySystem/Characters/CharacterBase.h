@@ -89,4 +89,5 @@ public:
 	// 核心观战切换函数 (暴露给蓝图的 PgUp / PgDn 调用)
 	UFUNCTION(BlueprintCallable, Category = "Spectate")
 	void SwitchSpectateTarget(int32 Direction);
+	
 };

@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "MPRoguelike/GameplayAbilitySystem/Characters/CharacterBase.h"
+#include "MPRoguelike/GameplayAbilitySystem/Characters/EnemyBase.h"
 
 UBasicAttributeSet::UBasicAttributeSet()
 {
@@ -34,6 +35,7 @@ void UBasicAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UBasicAttributeSet, MovementSpeed, COND_None, REPNOTIFY_Always);
 }
 
+// 统一拦截并处理所有生命值变动
 void UBasicAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -49,27 +51,49 @@ void UBasicAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	}
 	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
 	{
-		// 严谨起见，把血量锁死在 0 和 MaxHealth 之间
+		// 把血量锁死在 0 和 MaxHealth 之间
 		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
-		// 一旦血量归零！
-		if (GetHealth() <= 0.0f)
+
+		// -----------------------------------------------------
+		// 1. 判断受击者是不是【小怪 (EnemyBase)】
+		// -----------------------------------------------------
+		if (AEnemyBase* EnemyAvatar = Cast<AEnemyBase>(GetOwningActor()))
 		{
-			// 获取到这具身体
-			if (ACharacterBase* AvatarCharacter = Cast<ACharacterBase>(GetOwningActor()))
+			// 如果小怪还活着，处理受击顿帧与击退
+			if (GetHealth() > 0.0f)
 			{
-				// 只有服务器法官才有资格宣判死亡！
+				// 获取造成这次伤害的 GE 身上带的所有标签
+				FGameplayTagContainer EffectTags;
+				Data.EffectSpec.GetAllAssetTags(EffectTags);
+				
+				// 获取我们的 DoT 标签
+				FGameplayTag DoTTag = FGameplayTag::RequestGameplayTag(FName("Damage.DoT"));
+
+				// 核心过滤：如果这个伤害【不包含】 DoT 标签，才允许触发卡肉！
+				if (!EffectTags.HasTag(DoTTag))
+				{
+					// 从 GAS 上下文中抓出“是谁造成了伤害” (Instigator)
+					AActor* Instigator = Data.EffectSpec.GetContext().GetInstigator();
+					
+					// 呼叫小怪受击事件，并把凶手传过去
+					EnemyAvatar->Multicast_PlayHitReact(Instigator);
+				}
+			}
+		}
+		
+		// -----------------------------------------------------
+		// 2. 判断受击者是不是【玩家 (CharacterBase)】
+		// -----------------------------------------------------
+		else if (ACharacterBase* AvatarCharacter = Cast<ACharacterBase>(GetOwningActor()))
+		{
+			// 判断血量是否为零或以下 (玩家死亡逻辑保持不变)
+			if (GetHealth() <= 0.0f)
+			{
 				if (AvatarCharacter->HasAuthority() && !AvatarCharacter->GetIsDowned())
 				{
-					// 获取倒地标签
 					FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("State.Downed"));
-    
-					// 1. 先在本地强行加上游离标签
 					AvatarCharacter->GetAbilitySystemComponent()->AddLooseGameplayTag(DownedTag);
-
-					// 2. 然后手动把这个标签的数量设为 1，并强制同步给所有客户端
 					AvatarCharacter->GetAbilitySystemComponent()->SetLooseGameplayTagCount(DownedTag, 1);
-					
-					// 呼叫蓝图里的死亡事件
 					AvatarCharacter->OnServerHealthZero();
 				}
 			}

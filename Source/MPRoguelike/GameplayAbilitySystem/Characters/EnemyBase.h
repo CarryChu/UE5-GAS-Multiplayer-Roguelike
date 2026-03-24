@@ -86,4 +86,12 @@ public:
 	// 专门让客户端在醒来时刷新 UI 的事件！
 	UFUNCTION(BlueprintImplementableEvent, Category = "Pool|UI")
 	void OnClientWakeUpUI();
+	
+	// 服务器专用的大喇叭：向所有客户端广播“这只怪挨打了”
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayHitReact(AActor* DamageCauser);
+	
+	// 供 C++ 呼叫蓝图的受击卡肉与击退事件，带上伤害来源（凶手）
+	UFUNCTION(BlueprintImplementableEvent, Category = "Combat")
+	void OnTakeHitReact(AActor* DamageCauser);
 };

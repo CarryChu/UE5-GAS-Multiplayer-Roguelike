@@ -32,28 +32,23 @@ void UUpgradeManagerComponent::BeginPlay()
 TArray<FCardInfo> UUpgradeManagerComponent::DrawCards(int32 DrawCount)
 {
 	TArray<FCardInfo> ResultCards;
-	
 	// 没配数据表就直接返回空
 	if (!CardPoolTable)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("抽卡失败：未配置 CardPoolTable!"));
 		return ResultCards;
 	}
-
 	// 1. 把数据表里的所有行（卡牌）提取出来
 	TArray<FCardInfo*> AllCards;
 	CardPoolTable->GetAllRows<FCardInfo>(TEXT("DrawCardsContext"), AllCards);
-
 	// 临时结构体：用于存储本轮有资格被抽取的卡片及其动态权重
 	struct FCandidate
 	{
 		FCardInfo* Card;
 		int32 CurrentWeight;
 	};
-	
 	TArray<FCandidate> Candidates;
 	int32 TotalWeight = 0; // 轮盘的总大小
-
 	// 2. 动态权重计算与过滤 (O(N) 遍历)
 	for (FCardInfo* Card : AllCards)
 	{
@@ -62,19 +57,16 @@ TArray<FCardInfo> UUpgradeManagerComponent::DrawCards(int32 DrawCount)
 		{
 			CurrentLevel = OwnedCards[Card->CardID];
 		}
-
 		// 【机制A：满级剔除】如果已经满级，直接不加入候补池
 		if (CurrentLevel >= Card->MaxLevel)
 		{
 			continue; 
 		}
-		
 		// 【机制：专属隔离】如果不是通用卡，且玩家还没拥有它，直接不给抽！
 		if (!Card->bIsGenericPool && CurrentLevel == 0)
 		{
 			continue;
 		}
-
 		// 【机制B：动态加权】计算这张卡当前的实际权重
 		int32 FinalWeight = Card->BaseWeight;
 		if (CurrentLevel > 0)
@@ -82,12 +74,10 @@ TArray<FCardInfo> UUpgradeManagerComponent::DrawCards(int32 DrawCount)
 			// 如果玩家已经拥有这张卡，权重乘以3！鼓励玩家升满级！
 			FinalWeight *= 3; 
 		}
-
 		// 放入候补池，并累加总权重
 		Candidates.Add({Card, FinalWeight});
 		TotalWeight += FinalWeight;
 	}
-
 	// 3. 轮盘赌抽取（防重复）
 	for (int32 i = 0; i < DrawCount; ++i)
 	{
@@ -97,7 +87,6 @@ TArray<FCardInfo> UUpgradeManagerComponent::DrawCards(int32 DrawCount)
 		// 掷骰子：在 1 到 总权重 之间生成一个随机数
 		int32 RandomValue = FMath::RandRange(1, TotalWeight);
 		int32 CurrentSum = 0;
-
 		// 拨动轮盘，看随机数落在哪张卡的区间里
 		for (int32 j = 0; j < Candidates.Num(); ++j)
 		{
@@ -114,7 +103,6 @@ TArray<FCardInfo> UUpgradeManagerComponent::DrawCards(int32 DrawCount)
 			}
 		}
 	}
-
 	return ResultCards;
 }
 
