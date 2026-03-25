@@ -90,4 +90,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Spectate")
 	void SwitchSpectateTarget(int32 Direction);
 	
+	// 允许策划在蓝图里配置受击时的震屏类 (选你捏好的 LegacyCameraShake)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
+	TSubclassOf<class UCameraShakeBase> HitCameraShakeClass;
+
+	// 客户端专用的 RPC：只让挨打的那个玩家自己的屏幕震动！
+	UFUNCTION(Client, Unreliable)
+	void Client_PlayHitCameraShake();
+	
+	// 全服广播：带上“是谁打了你”的信息
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayHitFeedback(AActor* DamageInstigator);
+
+	// 蓝图接口：也会接收到这个凶手
+	UFUNCTION(BlueprintImplementableEvent, Category = "Feedback")
+	void BP_OnHitFeedback(AActor* DamageInstigator);
 };

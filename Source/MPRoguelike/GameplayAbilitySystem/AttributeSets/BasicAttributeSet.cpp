@@ -86,6 +86,18 @@ void UBasicAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		// -----------------------------------------------------
 		else if (ACharacterBase* AvatarCharacter = Cast<ACharacterBase>(GetOwningActor()))
 		{
+			if (Data.EvaluatedData.Magnitude < 0.0f)
+			{
+				// 从 GAS 的上下文中，抓出是谁造成的伤害！
+				AActor* Instigator = Data.EffectSpec.GetContext().GetInstigator();
+
+				// 1. 震屏照旧（如果关了可以注释掉）
+				AvatarCharacter->Client_PlayHitCameraShake();
+				
+				// 2. 呼叫全服多播，并把凶手传过去！
+				AvatarCharacter->Multicast_PlayHitFeedback(Instigator);
+			}
+			
 			// 判断血量是否为零或以下 (玩家死亡逻辑保持不变)
 			if (GetHealth() <= 0.0f)
 			{

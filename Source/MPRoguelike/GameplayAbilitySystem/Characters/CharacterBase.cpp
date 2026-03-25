@@ -229,3 +229,26 @@ void ACharacterBase::SwitchSpectateTarget(int32 Direction)
 		PC->SetViewTargetWithBlend(AliveTeammates[SpectateIndex], 0.2f);
 	}
 }
+
+// 只有客户端本地会执行这个函数！
+void ACharacterBase::Client_PlayHitCameraShake_Implementation()
+{
+	// 1. 确保策划配置了震屏类
+	if (HitCameraShakeClass)
+	{
+		// 2. 拿到当前角色的玩家控制器
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+		{
+			// 3. 终极安全锁：确保只震动“本地玩家”的屏幕，绝不乱震！
+			if (PC->IsLocalController())
+			{
+				PC->ClientStartCameraShake(HitCameraShakeClass);
+			}
+		}
+	}
+}
+
+void ACharacterBase::Multicast_PlayHitFeedback_Implementation(AActor* DamageInstigator)
+{
+	BP_OnHitFeedback(DamageInstigator);
+}
