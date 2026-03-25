@@ -118,7 +118,15 @@ void UUpgradeManagerComponent::SelectCard(FName SelectedCardID)
 	// 如果是服务器在执行这个函数，就打电话通知客户端同步数据！
 	if (GetOwner() && GetOwner()->HasAuthority())
 	{
+		// 1. 通知客户端去更新它的 Map，顺便让客户端自己去广播 UI 更新
 		Client_SyncCard(SelectedCardID, Level);
+
+		// 2. 如果服务器自己也是个玩家（Host），那服务器的本地 UI 也要更新！
+		// 广播本地委托：只通知服务器自己屏幕上的 HUD！
+		if (OnSkillUpgraded.IsBound())
+		{
+			OnSkillUpgraded.Broadcast(SelectedCardID, Level);
+		}
 	}
 }
 
@@ -136,4 +144,10 @@ void UUpgradeManagerComponent::Client_SyncCard_Implementation(FName CardID, int3
 {
 	// 客户端乖乖把服务器发来的最新等级，更新到自己的 Map 里
 	OwnedCards.Add(CardID, NewLevel);
+
+	// 客户端数据同步完毕！现在，广播本地委托，通知客户端自己屏幕上的 HUD 更新！
+	if (OnSkillUpgraded.IsBound())
+	{
+		OnSkillUpgraded.Broadcast(CardID, NewLevel);
+	}
 }

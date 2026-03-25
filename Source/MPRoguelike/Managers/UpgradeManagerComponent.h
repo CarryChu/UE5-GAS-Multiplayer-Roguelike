@@ -8,6 +8,9 @@
 #include "GameplayEffect.h"
 #include "UpgradeManagerComponent.generated.h"
 
+// 定义一个本地多播委托，带两个参数（技能ID和最新等级）
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSkillUpgradedSignature, FName, SkillID, int32, NewLevel);
+
 // 1. 定义卡牌的类型
 UENUM(BlueprintType)
 enum class ECardType : uint8
@@ -129,4 +132,8 @@ public:
 	// 获取玩家拥有的某张卡的当前等级 (没拥有就返回 0)
 	UFUNCTION(BlueprintPure, Category = "Upgrade System")
 	int32 GetCardCurrentLevel(FName CardID) const;
+	
+	// 这是一个纯本地的广播频道，蓝图可以监听它！
+	UPROPERTY(BlueprintAssignable, Category = "Upgrades")
+	FOnSkillUpgradedSignature OnSkillUpgraded;
 };
