@@ -4,6 +4,7 @@
 #include "EnemyBase.h"
 #include "Net/UnrealNetwork.h"
 #include "AbilitySystemComponent.h"
+#include "AIController.h"
 #include "CharacterBase.h"
 #include "GameplayEffectTypes.h"
 #include "GameFramework/PlayerController.h"
@@ -11,6 +12,7 @@
 #include "MPRoguelike/GameplayAbilitySystem/AttributeSets/BasicAttributeSet.h"
 
 
+class AAIController;
 // Sets default values
 AEnemyBase::AEnemyBase()
 {
@@ -123,6 +125,18 @@ void AEnemyBase::FindClosestPlayer()
 
 	// 循环结束后，把找到的最近玩家存入大脑！
 	TargetPlayer = ClosestPlayer;
+
+	// 如果锁定了目标，且怪物没有在Sleep
+	if (TargetPlayer && !bIsSleeping)
+	{
+		// 获取怪物头上的 AI 控制器
+		if (AAIController* AIController = Cast<AAIController>(GetController()))
+		{
+			// 下达指令：自动计算避障路径并移动向玩家！
+			// 50.0f 是接受半径，意思是离玩家 50 个单位时就停下，防止怪物贴脸穿模
+			AIController->MoveToActor(TargetPlayer, 50.0f); 
+		}
+	}
 }
 
 // 执行每帧逻辑
@@ -138,19 +152,15 @@ void AEnemyBase::Tick(float DeltaTime)
 		FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(TEXT("State.Attacking"));
 		if (AbilitySystemComponent->HasMatchingGameplayTag(AttackTag))
 		{
+			// 【核心修改】：如果有攻击标签，立刻命令 AI 控制器刹车！
+			if (AAIController* AIController = Cast<AAIController>(GetController()))
+			{
+				AIController->StopMovement();
+			}
 			return; // 攻击时站定不动
 		}
 	}
 
-	// 如果有目标，直接朝着他走！
-	if (TargetPlayer)
-	{
-		// 计算方向并消除 Z 轴
-		FVector Direction = (TargetPlayer->GetActorLocation() - GetActorLocation()).GetSafeNormal();
-		Direction.Z = 0.f; 
-		
-		AddMovementInput(Direction, 1.0f);
-	}
 }
 
 // Called to bind functionality to input
@@ -218,21 +228,21 @@ void AEnemyBase::WakeUp_Implementation(FVector Location)
 	if (HasAuthority()) // 确保只有服务器能改状态
 	{
 		bIsSleeping = false;
-		// 瞬间传送放在这里，引擎底层的移动组件会自动把新坐标同步给客户端
+		// 瞬间传送
 		SetActorLocation(Location, false, nullptr, ETeleportType::TeleportPhysics);
-		
-		// 👇【全新添加】：在怪物醒来的一瞬间，洗清所有负面状态！
+       
 		if (AbilitySystemComponent)
 		{
+			// 👉 【绝杀修正】：打断所有正在释放的技能（这会自动清除 State.Attacking 这种施法标签）！
+			// 绝对不要用 ClearAllAbilities()！
+			AbilitySystemComponent->CancelAllAbilities();
+          
+			// 洗清所有残留的减速/持续伤害等负面状态
 			FGameplayTagContainer TagsToRemove;
-			
-			// 把咱们做好的减速 Tag 加进黑名单
 			TagsToRemove.AddTag(FGameplayTag::RequestGameplayTag(TEXT("Debuff")));
-			// 核心绝杀：移除所有赋予了这些 Tag 的 GameplayEffect！
 			AbilitySystemComponent->RemoveActiveEffectsWithGrantedTags(TagsToRemove);
 		}
-		
-		OnRep_IsSleeping(); // 服务器本地手动调用一次（让服务器本地也取消隐藏）
+		OnRep_IsSleeping(); // 服务器本地手动调用一次
 	}
 }
 

@@ -22,4 +22,6 @@ Content/Assets/Characters/
 .vsconfig
 
 # --- 其它临时文件 ---
-*.log
+Content/KiteDemo/
+Content/ParagonProps/
+Content/SampleMap/
