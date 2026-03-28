@@ -252,3 +252,46 @@ void ACharacterBase::Multicast_PlayHitFeedback_Implementation(AActor* DamageInst
 {
 	BP_OnHitFeedback(DamageInstigator);
 }
+
+void ACharacterBase::GetCooldownByTag(FGameplayTag InCooldownTag, float& TimeRemaining, float& TotalDuration) const
+{
+	// 默认保底值，确保没 CD 时输出 0
+	TimeRemaining = 0.f;
+	TotalDuration = 0.f;
+
+	// 获取能力系统组件 (ASC)
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+    
+	if (ASC && InCooldownTag.IsValid())
+	{
+		// 1. 极其正统的操作：构建一个 GameplayEffect 查询器 (Query)
+		FGameplayTagContainer TagContainer(InCooldownTag);
+		FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(TagContainer);
+       
+		// 2. 调用只接受 1 个参数 (Query) 的原生 API，获取结果数组
+		TArray<float> TimeRemains = ASC->GetActiveEffectsTimeRemaining(Query);
+		TArray<float> Durations = ASC->GetActiveEffectsDuration(Query);
+
+		// 3. 极其严谨的遍历：拿到时间最长的那个 CD (防止同时中多个减速/冷却)
+		if (TimeRemains.Num() > 0 && Durations.Num() > 0)
+		{
+			float MaxTime = 0.f;
+			int32 MaxIndex = 0;
+			for (int32 i = 0; i < TimeRemains.Num(); ++i)
+			{
+				if (TimeRemains[i] > MaxTime)
+				{
+					MaxTime = TimeRemains[i];
+					MaxIndex = i;
+				}
+			}
+          
+			// 4. 安全注入输出值，传回给蓝图
+			if (Durations.IsValidIndex(MaxIndex))
+			{
+				TimeRemaining = TimeRemains[MaxIndex];
+				TotalDuration = Durations[MaxIndex];
+			}
+		}
+	}
+}

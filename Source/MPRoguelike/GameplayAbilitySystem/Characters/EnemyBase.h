@@ -71,6 +71,9 @@ protected:
 	// C++ 接收 GAS 属性变化的底层回调
 	virtual void HealthChangedCallback(const struct FOnAttributeChangeData& Data);
 	
+	// 专门用来记录上一次的血量，防止复活时触发受击表现
+	float LastHealthRecord = 100.f;
+	
 public:
 
 	// Called every frame

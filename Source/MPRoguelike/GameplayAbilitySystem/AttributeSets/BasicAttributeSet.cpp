@@ -38,77 +38,83 @@ void UBasicAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 // 统一拦截并处理所有生命值变动
 void UBasicAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
-	Super::PostGameplayEffectExecute(Data);
-	// 如果被改变的属性是 "移动速度" 
-	if (Data.EvaluatedData.Attribute == GetMovementSpeedAttribute())
-	{
-		// 拿到拥有这个属性的角色
-		if (ACharacter* AvatarCharacter = Cast<ACharacter>(GetOwningActor()))
-		{
-			// 把 GAS 里的数字，强行赋值给角色的移动组件！
-			AvatarCharacter->GetCharacterMovement()->MaxWalkSpeed = GetMovementSpeed();
-		}
-	}
-	if (Data.EvaluatedData.Attribute == GetHealthAttribute())
-	{
-		// 把血量锁死在 0 和 MaxHealth 之间
-		SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
+    Super::PostGameplayEffectExecute(Data);
 
-		// -----------------------------------------------------
-		// 1. 判断受击者是不是【小怪 (EnemyBase)】
-		// -----------------------------------------------------
-		if (AEnemyBase* EnemyAvatar = Cast<AEnemyBase>(GetOwningActor()))
-		{
-			// 如果小怪还活着，处理受击顿帧与击退
-			if (GetHealth() > 0.0f)
-			{
-				// 获取造成这次伤害的 GE 身上带的所有标签
-				FGameplayTagContainer EffectTags;
-				Data.EffectSpec.GetAllAssetTags(EffectTags);
-				
-				// 获取我们的 DoT 标签
-				FGameplayTag DoTTag = FGameplayTag::RequestGameplayTag(FName("Damage.DoT"));
+    // 如果被改变的属性是 "移动速度" 
+    if (Data.EvaluatedData.Attribute == GetMovementSpeedAttribute())
+    {
+       if (ACharacter* AvatarCharacter = Cast<ACharacter>(GetOwningActor()))
+       {
+          AvatarCharacter->GetCharacterMovement()->MaxWalkSpeed = GetMovementSpeed();
+       }
+    }
 
-				// 核心过滤：如果这个伤害【不包含】 DoT 标签，才允许触发卡肉！
-				if (!EffectTags.HasTag(DoTTag))
-				{
-					// 从 GAS 上下文中抓出“是谁造成了伤害” (Instigator)
-					AActor* Instigator = Data.EffectSpec.GetContext().GetInstigator();
-					
-					// 呼叫小怪受击事件，并把凶手传过去
-					EnemyAvatar->Multicast_PlayHitReact(Instigator);
-				}
-			}
-		}
-		
-		// -----------------------------------------------------
-		// 2. 判断受击者是不是【玩家 (CharacterBase)】
-		// -----------------------------------------------------
-		else if (ACharacterBase* AvatarCharacter = Cast<ACharacterBase>(GetOwningActor()))
-		{
-			if (Data.EvaluatedData.Magnitude < 0.0f)
-			{
-				// 从 GAS 的上下文中，抓出是谁造成的伤害！
-				AActor* Instigator = Data.EffectSpec.GetContext().GetInstigator();
+    // ====================================================================
+    // 🌟 生命值变化处理核心区
+    // ====================================================================
+    if (Data.EvaluatedData.Attribute == GetHealthAttribute())
+    {
+       // -----------------------------------------------------------------
+       // 【绝对防御阀门】：游戏结束/团灭时的无敌拦截！
+       // -----------------------------------------------------------------
+       FGameplayTag GameOverTag = FGameplayTag::RequestGameplayTag(FName("State.GameOver"));
+       
+       // 如果玩家身上有这个标签，且这是一次“扣血”行为 (Magnitude < 0)
+       if (Data.Target.HasMatchingGameplayTag(GameOverTag) && Data.EvaluatedData.Magnitude < 0.0f)
+       {
+           // 极其神绝的操作：因为此时血已经被扣了，我们减去一个负数(负负得正)，把血量加回来！
+           float RestoredHealth = GetHealth() - Data.EvaluatedData.Magnitude;
+           SetHealth(FMath::Clamp(RestoredHealth, 0.0f, GetMaxHealth()));
+           
+           // 极其无情地拦截：直接踢出函数！后面的受击动画、震屏统统取消！
+           return; 
+       }
+       // -----------------------------------------------------------------
 
-				// 1. 震屏照旧（如果关了可以注释掉）
-				AvatarCharacter->Client_PlayHitCameraShake();
-				
-				// 2. 呼叫全服多播，并把凶手传过去！
-				AvatarCharacter->Multicast_PlayHitFeedback(Instigator);
-			}
-			
-			// 判断血量是否为零或以下 (玩家死亡逻辑保持不变)
-			if (GetHealth() <= 0.0f)
-			{
-				if (AvatarCharacter->HasAuthority() && !AvatarCharacter->GetIsDowned())
-				{
-					FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("State.Downed"));
-					AvatarCharacter->GetAbilitySystemComponent()->AddLooseGameplayTag(DownedTag);
-					AvatarCharacter->GetAbilitySystemComponent()->SetLooseGameplayTagCount(DownedTag, 1);
-					AvatarCharacter->OnServerHealthZero();
-				}
-			}
-		}
-	}
+       // 把血量锁死在 0 和 MaxHealth 之间
+       SetHealth(FMath::Clamp(GetHealth(), 0.0f, GetMaxHealth()));
+
+       // -----------------------------------------------------
+       // 1. 判断受击者是不是【小怪 (EnemyBase)】
+       // -----------------------------------------------------
+       if (AEnemyBase* EnemyAvatar = Cast<AEnemyBase>(GetOwningActor()))
+       {
+          if (GetHealth() > 0.0f && Data.EvaluatedData.Magnitude < 0.0f)
+          {
+             FGameplayTagContainer EffectTags;
+             Data.EffectSpec.GetAllAssetTags(EffectTags);
+             FGameplayTag DoTTag = FGameplayTag::RequestGameplayTag(FName("Damage.DoT"));
+
+             if (!EffectTags.HasTag(DoTTag))
+             {
+                AActor* Instigator = Data.EffectSpec.GetContext().GetInstigator();
+                EnemyAvatar->Multicast_PlayHitReact(Instigator);
+             }
+          }
+       }
+       
+       // -----------------------------------------------------
+       // 2. 判断受击者是不是【玩家 (CharacterBase)】
+       // -----------------------------------------------------
+       else if (ACharacterBase* AvatarCharacter = Cast<ACharacterBase>(GetOwningActor()))
+       {
+          if (Data.EvaluatedData.Magnitude < 0.0f)
+          {
+             AActor* Instigator = Data.EffectSpec.GetContext().GetInstigator();
+             AvatarCharacter->Client_PlayHitCameraShake();
+             AvatarCharacter->Multicast_PlayHitFeedback(Instigator);
+          }
+          
+          if (GetHealth() <= 0.0f)
+          {
+             if (AvatarCharacter->HasAuthority() && !AvatarCharacter->GetIsDowned())
+             {
+                FGameplayTag DownedTag = FGameplayTag::RequestGameplayTag(FName("State.Downed"));
+                AvatarCharacter->GetAbilitySystemComponent()->AddLooseGameplayTag(DownedTag);
+                AvatarCharacter->GetAbilitySystemComponent()->SetLooseGameplayTagCount(DownedTag, 1);
+                AvatarCharacter->OnServerHealthZero();
+             }
+          }
+       }
+    }
 }

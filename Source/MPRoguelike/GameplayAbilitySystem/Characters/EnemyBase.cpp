@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
 #include "CharacterBase.h"
+#include "GameplayEffectExtension.h"
 #include "GameplayEffectTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -84,6 +85,12 @@ void AEnemyBase::BeginPlay()
 	{
 		// 每 0.5 秒执行一次 FindClosestPlayer 函数，且循环执行
 		GetWorld()->GetTimerManager().SetTimer(TimerHandle_FindPlayer, this, &AEnemyBase::FindClosestPlayer, 0.5f, true);
+	}
+	
+	if (AttributeSet)
+	{
+		// 刚开始时，先同步一下当前的血量
+		LastHealthRecord = AttributeSet->GetHealth();
 	}
 }
 
@@ -216,13 +223,12 @@ void AEnemyBase::GoToSleep()
 	{
 		bIsSleeping = true;
 		// 怪物一旦死亡，立刻把它传送到地下 10000 米深处！
-		// 这样即使客户端在进行网络平滑插值，也绝对不会在玩家的屏幕上留下任何残影！
 		SetActorLocation(FVector(0.f, 0.f, -10000.f), false, nullptr, ETeleportType::TeleportPhysics);
 		OnRep_IsSleeping(); // 服务器本地手动调用一次
 	}
 }
 
-// 4. 修改 WakeUp 的 C++ 核心实现
+// WakeUp 的 C++ 核心实现
 void AEnemyBase::WakeUp_Implementation(FVector Location)
 {
 	if (HasAuthority()) // 确保只有服务器能改状态
@@ -233,8 +239,6 @@ void AEnemyBase::WakeUp_Implementation(FVector Location)
        
 		if (AbilitySystemComponent)
 		{
-			// 👉 【绝杀修正】：打断所有正在释放的技能（这会自动清除 State.Attacking 这种施法标签）！
-			// 绝对不要用 ClearAllAbilities()！
 			AbilitySystemComponent->CancelAllAbilities();
           
 			// 洗清所有残留的减速/持续伤害等负面状态
@@ -271,7 +275,6 @@ void AEnemyBase::OnSlowTagChanged(const FGameplayTag CallbackTag, int32 NewCount
 // 实现回调逻辑
 void AEnemyBase::HealthChangedCallback(const FOnAttributeChangeData& Data)
 {
-	// 当血量发生变化时，C++ 会立刻呼叫蓝图里的事件，并把新旧血量传过去！
 	OnHealthChanged(Data.OldValue, Data.NewValue);
 }
 

@@ -4,9 +4,35 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "GameplayEffect.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemComponent.h"
 #include "CharacterBase.generated.h"
+
+// ---------------------------------------------------------
+// 技能 UI 数据配置表
+// ---------------------------------------------------------
+USTRUCT(BlueprintType)
+struct FSkillUIInfo
+{
+	GENERATED_BODY()
+
+	// 技能名称
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Info")
+	FText SkillName;
+
+	// 技能图标 (指针引用极其安全且节省内存)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Info")
+	class UTexture2D* SkillIcon;
+
+	// 冷却标签 (用于监听 GAS)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Info")
+	FGameplayTag CooldownTag;
+
+	// 绑定的按键 (用于 UI 显示按键提示，如 E 键)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Info")
+	FKey InputKey;
+};
 
 UCLASS()
 class MPROGUELIKE_API ACharacterBase : public ACharacter, public IAbilitySystemInterface
@@ -105,4 +131,12 @@ public:
 	// 蓝图接口：也会接收到这个凶手
 	UFUNCTION(BlueprintImplementableEvent, Category = "Feedback")
 	void BP_OnHitFeedback(AActor* DamageInstigator);
+	
+	// 玩家的技能配置字典（用标签做 Key，比如 Input.Skill.E）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill UI")
+	TMap<FGameplayTag, FSkillUIInfo> SkillConfigs;
+	
+	// 暴露给蓝图的冷却查询
+	UFUNCTION(BlueprintPure, Category = "GAS|Cooldown")
+	void GetCooldownByTag(FGameplayTag InCooldownTag, float& TimeRemaining, float& TotalDuration) const;
 };
