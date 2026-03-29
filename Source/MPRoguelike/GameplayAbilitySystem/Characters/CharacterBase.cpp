@@ -59,6 +59,43 @@ void ACharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// ==========================================
+	// 游戏一开始就把子弹造好！
+	// ==========================================
+	if (HasAuthority() && FireballClass)
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = this; 
+        
+		for (int32 i = 0; i < FireballPoolSize; ++i)
+		{
+			// 生成子弹，初始位置设为远离地图的地下，确保它们不会干扰游戏
+			AActor* NewFireball = GetWorld()->SpawnActor<AActor>(FireballClass, FVector(0, 0, -5000), FRotator::ZeroRotator, SpawnParams);
+			if (NewFireball)
+			{
+				// 极其无情地让它立刻休眠
+				NewFireball->SetActorHiddenInGame(true);
+				NewFireball->SetActorEnableCollision(false);
+				NewFireball->SetActorTickEnabled(false);
+				FireballPool.Add(NewFireball);
+			}
+		}
+	}
+}
+
+// 极其快速的遍历查询：谁在睡觉，就把它揪出来！
+AActor* ACharacterBase::GetAvailableFireball()
+{
+	for (AActor* Fireball : FireballPool)
+	{
+		// 如果它处于隐藏状态，说明它在休眠，可以征用！
+		if (Fireball && Fireball->IsHidden())
+		{
+			return Fireball;
+		}
+	}
+	// 如果池子空了（说明全在天上飞），为保帧率直接放弃生成
+	return nullptr; 
 }
 
 // 当被控制器拥有时调用

@@ -139,4 +139,20 @@ public:
 	// 暴露给蓝图的冷却查询
 	UFUNCTION(BlueprintPure, Category = "GAS|Cooldown")
 	void GetCooldownByTag(FGameplayTag InCooldownTag, float& TimeRemaining, float& TotalDuration) const;
+	
+	// 允许策划在蓝图配置火球类 (BP_Fireball)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pool|Fireball")
+	TSubclassOf<AActor> FireballClass;
+	
+	// 预先生成的最大子弹数 (满级12发，4人联机至少备足60发)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pool|Fireball")
+	int32 FireballPoolSize = 60;
+	
+	// 真正的子弹仓库
+	UPROPERTY()
+	TArray<AActor*> FireballPool;
+	
+	// 暴露给蓝图的提弹口：给我一颗处于休眠状态的火球！
+	UFUNCTION(BlueprintCallable, Category = "Pool|Fireball")
+	AActor* GetAvailableFireball();
 };
