@@ -12,7 +12,9 @@ AEclipseFireball::AEclipseFireball()
 
 	SphereComp = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComp"));
 	RootComponent = SphereComp;
-	SphereComp->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	SphereComp->SetCollisionObjectType(ECC_WorldDynamic);
+	SphereComp->SetCollisionResponseToAllChannels(ECR_Ignore); // 先屏蔽一切！
+	SphereComp->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap); // 只和怪物(Pawn)发生重叠！
 	SphereComp->OnComponentBeginOverlap.AddDynamic(this, &AEclipseFireball::OnOverlapBegin);
 
 	NiagaraComp = CreateDefaultSubobject<UNiagaraComponent>(TEXT("NiagaraComp"));
